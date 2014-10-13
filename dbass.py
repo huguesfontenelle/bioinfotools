@@ -7,13 +7,16 @@ hugues.fontenelle@medisin.uio.no
 
 from bs4 import BeautifulSoup
 from selenium import webdriver
-import urllib
+import urllib, csv
 
 # ------------------------------------------------
-def parse_var(varurl):
+def parse_var(varurl, csv_writer):
+    '''
+    For each variant page, get the relevant details
+    Ouput to CSV file
+    '''
     fp2 = urllib.urlopen(varurl)
     soup2 = BeautifulSoup(fp2)
-    global table2
     table2 = soup2.findAll('table')[0]
     tmp = table2.find(text='Gene').findNext('span')
     if tmp.find('abbr'):
@@ -37,31 +40,39 @@ def parse_var(varurl):
     seq = div.findAll(text=True)
     seq = [x for x in seq if x is not None]
     seq = ''.join(seq).strip().replace(' ', '')
-    return [gene, mutation, exon, phenotype, dist, frameshift, reference, seq]
+    db_entry = [gene, mutation, exon, phenotype, dist, frameshift, reference, seq]
+    csv_writer.writerow(db_entry)
+    return db_entry
 
 # ------------------------------------------------
-def parse_page(soup):
+def parse_page(soup, csv_writer):
+    '''
+    Parse a single page and follow the links to the 30 variants
+    '''
     table = soup.findAll('table')[0]
     records = table.findAll('tr')
     page_db = []
-    #for record in records[1:]:
-    record = records[1]
-    td = record.findAll('td')
-    link = td[5].a['href']
-    varurl = "http://www.dbass.org.uk/DBASS5/" + link[2:]
-    variant = parse_var(varurl)
-    page_db.append(variant)
+    for record in records[1:]:
+        td = record.findAll('td')
+        link = td[5].a['href']
+        varurl = "http://www.dbass.org.uk/DBASS5/" + link[2:]
+        variant = parse_var(varurl, csv_writer)
+        page_db.append(variant)
     return page_db
 
 # ------------------------------------------------
-def parse_webpage():
+def parse_site(csv_writer):
+    '''
+    Parse the whole site.
+    Uncomment the while loop to click "next page" and parse all pages
+    '''
     url = "http://www.dbass.org.uk/DBASS5/viewlist.aspx"
     next_page = 'PageBody_lbnNextPage'
     driver = webdriver.Firefox()
     driver.get(url)
     html = driver.page_source
     soup = BeautifulSoup(html)
-    db = parse_page(soup)
+    db = parse_page(soup, csv_writer)
     '''
     while soup.find(id=re.compile(next_page)):
         driver.find_element_by_id(next_page).click()
@@ -72,4 +83,7 @@ def parse_webpage():
     
 # ============================================================
 if __name__ == "__main__":
-    db = parse_webpage()
+    csv_file = open('dbass5.csv','w')
+    csv_writer = csv.writer(csv_file, delimiter='\t')
+    db = parse_site(csv_writer)
+    csv_file.close()
