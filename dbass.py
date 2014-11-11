@@ -7,14 +7,16 @@ hugues.fontenelle@medisin.uio.no
 
 from bs4 import BeautifulSoup
 from selenium import webdriver
-import urllib, csv
+import urllib
+import json
 
 # ------------------------------------------------
-def parse_var(varurl, csv_writer):
+def parse_var(varurl):
     '''
     For each variant page, get the relevant details
     Ouput to CSV file
     '''
+    db_variant = {}
     fp2 = urllib.urlopen(varurl)
     soup2 = BeautifulSoup(fp2)
     table2 = soup2.findAll('table')[0]
@@ -40,50 +42,65 @@ def parse_var(varurl, csv_writer):
     seq = div.findAll(text=True)
     seq = [x for x in seq if x is not None]
     seq = ''.join(seq).strip().replace(' ', '')
-    db_entry = [gene, mutation, exon, phenotype, dist, frameshift, reference, seq]
-    csv_writer.writerow(db_entry)
-    return db_entry
+    var_id = varurl.split('=')[1]
+
+
+    db_variant['var_id'] = var_id
+    db_variant['gene'] = gene
+    db_variant['mutation'] = mutation
+    db_variant['exon'] = exon
+    db_variant['phenotype'] = phenotype
+    db_variant['dist'] = dist
+    db_variant['frameshift'] = frameshift
+    db_variant['reference'] = reference
+    db_variant['seq'] = seq
+    return [db_variant]
 
 # ------------------------------------------------
-def parse_page(soup, csv_writer):
+def parse_page(soup):
     '''
     Parse a single page and follow the links to the 30 variants
     '''
+    db_page = []
     table = soup.findAll('table')[0]
     records = table.findAll('tr')
-    page_db = []
     for record in records[1:]:
         td = record.findAll('td')
         link = td[5].a['href']
         varurl = "http://www.dbass.org.uk/DBASS5/" + link[2:]
-        variant = parse_var(varurl, csv_writer)
-        page_db.append(variant)
-    return page_db
+        db_variant = parse_var(varurl)
+        db_page.extend(db_variant)
+    return db_page
 
 # ------------------------------------------------
-def parse_site(csv_writer):
+def parse_site():
     '''
     Parse the whole site.
     Uncomment the while loop to click "next page" and parse all pages
     '''
+    db_site = []
     url = "http://www.dbass.org.uk/DBASS5/viewlist.aspx"
     next_page = 'PageBody_lbnNextPage'
     driver = webdriver.Firefox()
     driver.get(url)
     html = driver.page_source
     soup = BeautifulSoup(html)
-    db = parse_page(soup, csv_writer)
+    db_page = parse_page(soup)
+    db_site.extend(db_page)
     '''
     while soup.find(id=re.compile(next_page)):
         driver.find_element_by_id(next_page).click()
         soup = BeautifulSoup(driver.page_source)
-        db.extend(parse_page(soup))
+        db_page = parse_page(soup)
+        db_site.extend(db_page)
     '''
-    return db
+    driver.close()
+    return db_site
     
 # ============================================================
 if __name__ == "__main__":
-    csv_file = open('dbass5.csv','w')
-    csv_writer = csv.writer(csv_file, delimiter='\t')
-    db = parse_site(csv_writer)
-    csv_file.close()
+    db = parse_site()
+    with open('dbass5.json', 'w') as f:
+        data = json.dumps(db, sort_keys=True, indent=4, separators=(',', ': '), ensure_ascii=False)
+        f.write(unicode(data))
+    
