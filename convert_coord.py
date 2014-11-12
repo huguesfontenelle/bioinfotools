@@ -57,7 +57,7 @@ record = Entrez.read(handle)
 idlist = record['IdList']
 
 # fetch
-handle = Entrez.efetch(db="nuccore", id=idlist,rettype="gb", retmode="text")
+handle = Entrez.efetch(db="nucleotide", id=idlist, rettype="gb", retmode="txt")
 entrez_record = SeqIO.read(handle, "gb")
 entrez_seq = entrez_record.seq 
 
@@ -67,18 +67,14 @@ upstream_seq = Seq(upstream_seq.upper())
 pos_up = entrez_seq.find(upstream_seq)
 pos_down = entrez_seq.find(downstream_seq)
 
-hgvs_c = entrez_record.id + ':c.' + str(pos_down) + ref.upper() + '>' + alt.upper()
+RefSeqGene = entrez_record.id
+hgvs_c = RefSeqGene + ':c.' + str(pos_down) + ref.upper() + '>' + alt.upper()
 
-# map cdna to genomic coordinates
-import hgvs.dataproviders.uta
-import hgvs.parser
-import hgvs.variantmapper
+import subprocess
+refseqgene_aln = '/Users/huguesfo/Documents/DATA/RefSeqGene/GCF_000001405.25_refseqgene_alignments.gff3'
+cmd = ['cat', refseqgene_aln, '|', 'grep', RefSeqGene, '|', 'cut -f1 -f4 -f5']
+p = subprocess.Popen(' '.join(cmd), stdout=subprocess.PIPE, shell=True)
+out, err = p.communicate()
+alt_ac, start_ref, end_ref = out.rstrip().split('\t')
 
-hgvsparser = hgvs.parser.Parser()
-var_c1 = hgvsparser.parse_hgvs_variant(hgvs_c)
-hdp = hgvs.dataproviders.uta.connect()
-
-#evm = hgvs.variantmapper.EasyVariantMapper(hdp, primary_assembly='GRCh37')
-evm = hgvs.variantmapper.VariantMapper(hdp)
-alt_ac = chr_to_refseq_dict['8']
-var_g = evm.c_to_g(var_c1, alt_ac)
+var_g = alt_ac + ':g.' + str(int(start_ref) + pos_down) + ref.upper() + '>' + alt.upper()
