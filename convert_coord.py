@@ -52,19 +52,56 @@ def refseqgene_to_genomic(RefSeqGene):
 # ------------------------------------------------
 def process(db_entry):
     gene = db_entry['gene']
-
+    mutation = db_entry['mutation']
+    if mutation.find('>') != -1:
+        mut_type = 'snp'
+    elif mutation.find('ins')  != -1:
+        mut_type = 'ins'
+    elif mutation.find('del')  != -1:
+        mut_type = 'del'
+    elif mutation.find('dup')  != -1:
+        mut_type = 'dup'   
+    else:
+        mut_type = 'unknown'
+        
     print('processing: gene ' + gene + ' in record ' + db_entry['var_id'])
                 
     seq = db_entry['seq']
     seq = seq.replace('/', '')
-    seq = re.split('\(|>|\)', seq)
-    try:
-        upstream_seq, ref, alt, downstream_seq = seq
-    except Exception:
-        raise
-        
-    #mutation = db_entry['mutation']
-
+    
+    if mut_type == 'snp':    
+        seq = re.split('\(|>|\)', seq)
+        try:
+            upstream_seq, ref, alt, downstream_seq = seq
+        except Exception:
+            raise
+    elif mut_type == 'del':    
+        seq = re.split('\(|\)', seq)
+        try:
+            upstream_seq, deletion, downstream_seq = seq
+            ref = deletion
+            alt = ''
+        except Exception:
+            raise   
+    elif mut_type == 'ins':    
+        seq = re.split('\[|\]', seq)
+        try:
+            upstream_seq, insertion, downstream_seq = seq
+            ref = ''
+            alt = insertion
+        except Exception:
+            raise  
+    elif mut_type == 'dup':    
+        seq = re.split('\[|\]', seq)
+        try:
+            upstream_seq, duplication, downstream_seq = seq
+            ref = ''
+            alt = duplication
+        except Exception:
+            raise        
+    else:
+        warning('Unknown mutation %s' % mutation)
+        return db_entry
 
     # get gene fasta from entrez
     # count
@@ -80,14 +117,21 @@ def process(db_entry):
     if count < 1:
         warning('Gene ' + gene + ' not found in record ' + db_entry['var_id'])
         return db_entry
-
+    # warn for several finds
+    if count > 1:
+        warning('Gene ' + gene + ' found ' + str(count) + 'times in record ' +\
+            db_entry['var_id'] + '\n' +\
+            'Processing entry #1')
+        warning('Gene %s found %i times in record %s. Processing entry #1.'
+            % (gene, count, db_entry['var_id']))
+        
     # search ID's
     handle = Entrez.esearch(db="nuccore", term=search_term)
     record = Entrez.read(handle)
     idlist = record['IdList']
 
     # fetch
-    handle = Entrez.efetch(db="nucleotide", id=idlist,
+    handle = Entrez.efetch(db="nucleotide", id=idlist[0],
                            rettype="gb", retmode="txt")
     entrez_record = SeqIO.read(handle, "gb")
     entrez_seq = entrez_record.seq
@@ -109,7 +153,8 @@ def process(db_entry):
     var_g = {'chrom': chrom,
              'pos': int(start_ref) + pos_down,
              'ref':ref.upper(),
-             'alt':alt.upper()}
+             'alt':alt.upper(),
+             'mut_type':mut_type}
     db_entry[u'var_g'] = var_g
     db_entry[u'var_c'] = var_c
 
@@ -117,12 +162,12 @@ def process(db_entry):
 
 # ============================================================
 if __name__ == "__main__":
-    with open('dbass5.json','r') as f:
+    with open('dbass5_all.json','r') as f:
         db = json.loads(f.read())
         for db_entry in db:
             db_entry = process(db_entry)
 
-    with open('dbass5_annotated.json', 'w') as f:
+    with open('dbass5_all_annotated.json', 'w') as f:
         data = json.dumps(db, sort_keys=True, indent=4,
                           separators=(',', ': '), ensure_ascii=False)
         f.write(unicode(data))
