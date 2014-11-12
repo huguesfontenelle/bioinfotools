@@ -7,7 +7,7 @@ hugues.fontenelle@medisin.uio.no
 
 from bs4 import BeautifulSoup
 from selenium import webdriver
-import urllib
+import urllib, re
 import json
 
 # ------------------------------------------------
@@ -44,7 +44,6 @@ def parse_var(varurl):
     seq = ''.join(seq).strip().replace(' ', '')
     var_id = varurl.split('=')[1]
 
-
     db_variant['var_id'] = var_id
     db_variant['gene'] = gene
     db_variant['mutation'] = mutation
@@ -54,6 +53,8 @@ def parse_var(varurl):
     db_variant['frameshift'] = frameshift
     db_variant['reference'] = reference
     db_variant['seq'] = seq
+    
+    print(var_id)
     return [db_variant]
 
 # ------------------------------------------------
@@ -81,26 +82,33 @@ def parse_site():
     db_site = []
     url = "http://www.dbass.org.uk/DBASS5/viewlist.aspx"
     next_page = 'PageBody_lbnNextPage'
+    #next_page = 'PageBody_lbnLastPage'
     driver = webdriver.Firefox()
     driver.get(url)
     html = driver.page_source
     soup = BeautifulSoup(html)
+    curr_page = soup.find(id='PageBody_lblCurrentPage').string
+    tot_page = soup.find(id='PageBody_lblTotalPages').string
+            
+    print('Processing page ' + curr_page + ' of ' + tot_page)  
     db_page = parse_page(soup)
     db_site.extend(db_page)
-    '''
-    while soup.find(id=re.compile(next_page)):
+    
+    while soup.find(id=re.compile(next_page)).get('href', None):
         driver.find_element_by_id(next_page).click()
         soup = BeautifulSoup(driver.page_source)
+        curr_page = soup.find(id='PageBody_lblCurrentPage').string
+        print('Processing page ' + curr_page + ' of ' + tot_page)
         db_page = parse_page(soup)
         db_site.extend(db_page)
-    '''
+    
     driver.close()
     return db_site
     
 # ============================================================
 if __name__ == "__main__":
     db = parse_site()
-    with open('dbass5.json', 'w') as f:
+    with open('dbass5_all.json', 'w') as f:
         data = json.dumps(db, sort_keys=True, indent=4, separators=(',', ': '), ensure_ascii=False)
         f.write(unicode(data))
     
