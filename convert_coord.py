@@ -8,18 +8,17 @@ hugues.fontenelle@medisin.uio.no
 from __future__ import print_function
 import re
 import json
-import subprocess, sys
+import subprocess, sys, os.path
 from Bio import Entrez
 from Bio import SeqIO
 from Bio.Seq import Seq
 
-# ------------------------------------------------
-def warning(*objs):
-    print("WARNING: ", *objs, file=sys.stderr)
+
+refSeqPath = '/Users/huguesfo/Documents/DATA/RefSeqGene/'
 
 # Human Genome Assembly Data
 # http://www.ncbi.nlm.nih.gov/projects/genome/assembly/grc/human/data/
-refseqgene_aln = '/Users/huguesfo/Documents/DATA/RefSeqGene/GCF_000001405.25_refseqgene_alignments.gff3'
+refseqgene_aln = refSeqPath + 'GCF_000001405.25_refseqgene_alignments.gff3'
 chr_to_refseq_dict = {
     '1':"NC_000001.10",'2':"NC_000002.11", '3':"NC_000003.11",
     '4':"NC_000004.11", '5':"NC_000005.9", '6':"NC_000006.11",
@@ -35,78 +34,38 @@ chr_to_refseq_dict = {
 def refseqgene_to_genomic(RefSeqGene):
     '''
     Maps a RefSeqGene to GRCh37.p13 genomic reference
-    eg: refseqgene_to_genomic(NG_007954.1)
+    eg: refseqgene_to_genomic('NG_007954.1')
     returns: NC_000008.10, 143951773, 143966236
     '''
     cmd = ['cat', refseqgene_aln, '|', 'grep', RefSeqGene,
            '|', 'cut -f1 -f4 -f5']
     p = subprocess.Popen(' '.join(cmd), stdout=subprocess.PIPE, shell=True)
     out, err = p.communicate()
-    alt_ac, start_ref, end_ref = out.rstrip().split('\t')
-
+    if out == '':
+        return False
+    records = out.rstrip().split('\n')
+    alt_ac, start_ref, end_ref  = records[0].split('\t')
+    # should get the NC instead of just the first one
     chrom = (key for key,value in chr_to_refseq_dict.items()
         if value==alt_ac).next()
 
     return alt_ac, chrom, start_ref, end_ref
 
 # ------------------------------------------------
-def process(db_entry):
-    gene = db_entry['gene']
-    mutation = db_entry['mutation']
-    if mutation.find('>') != -1:
-        mut_type = 'snp'
-    elif mutation.find('ins')  != -1:
-        mut_type = 'ins'
-    elif mutation.find('del')  != -1:
-        mut_type = 'del'
-    elif mutation.find('dup')  != -1:
-        mut_type = 'dup'   
-    else:
-        mut_type = 'unknown'
-        
-    print('processing: gene ' + gene + ' in record ' + db_entry['var_id'])
-                
-    seq = db_entry['seq']
-    seq = seq.replace('/', '')
-    
-    if mut_type == 'snp':    
-        seq = re.split('\(|>|\)', seq)
-        try:
-            upstream_seq, ref, alt, downstream_seq = seq
-        except Exception:
-            raise
-    elif mut_type == 'del':    
-        seq = re.split('\(|\)', seq)
-        try:
-            upstream_seq, deletion, downstream_seq = seq
-            ref = deletion
-            alt = ''
-        except Exception:
-            raise   
-    elif mut_type == 'ins':    
-        seq = re.split('\[|\]', seq)
-        try:
-            upstream_seq, insertion, downstream_seq = seq
-            ref = ''
-            alt = insertion
-        except Exception:
-            raise  
-    elif mut_type == 'dup':    
-        seq = re.split('\[|\]', seq)
-        try:
-            upstream_seq, duplication, downstream_seq = seq
-            ref = ''
-            alt = duplication
-        except Exception:
-            raise        
-    else:
-        warning('Unknown mutation %s' % mutation)
-        return db_entry
-
-    # get gene fasta from entrez
-    # count
+def fetch_RefSeqGene(gene_name, RefSeqGene=None):
     Entrez.email = "hugues.fontenelle@medisin.uio.no"
-    search_term = gene + '[Gene Name] AND Homo sapiens[Organism] AND RefSeqGene'
+    if RefSeqGene:
+        search_term = RefSeqGene
+        filename = refSeqPath + RefSeqGene + '.gb'
+        if os.path.isfile(filename):
+            h_gb = open(filename, "rU")
+            records = SeqIO.parse(h_gb, "gb")
+            entrez_record = records.next()
+            h_gb.close()
+            return entrez_record
+    else:
+        search_term = gene_name + '[Gene Name] AND Homo sapiens[Organism] AND RefSeqGene'
+
     handle = Entrez.egquery(term=search_term)
     record = Entrez.read(handle)
     for row in record["eGQueryResult"]:
@@ -115,57 +74,114 @@ def process(db_entry):
 
     # check if we do find the gene
     if count < 1:
-        warning('Gene ' + gene + ' not found in record ' + db_entry['var_id'])
-        return db_entry
+        print('WARNING! Gene ' + gene_name + ' not found in record ' + db_entry['var_id'])
+        return False
     # warn for several finds
     if count > 1:
-        warning('Gene ' + gene + ' found ' + str(count) + 'times in record ' +\
-            db_entry['var_id'] + '\n' +\
-            'Processing entry #1')
-        warning('Gene %s found %i times in record %s. Processing entry #1.'
-            % (gene, count, db_entry['var_id']))
-        
-    # search ID's
+        print('WARNING! Gene %s found %i times in record %s. Processing entry #1.'
+            % (gene_name, count, db_entry['var_id']))
+
     handle = Entrez.esearch(db="nuccore", term=search_term)
     record = Entrez.read(handle)
     idlist = record['IdList']
 
-    # fetch
     handle = Entrez.efetch(db="nucleotide", id=idlist[0],
                            rettype="gb", retmode="txt")
     entrez_record = SeqIO.read(handle, "gb")
-    entrez_seq = entrez_record.seq
-
-    downstream_seq = Seq(downstream_seq.upper())
-    upstream_seq = Seq(upstream_seq.upper())
-
-    #pos_up = entrez_seq.find(upstream_seq)
-    pos_down = entrez_seq.find(downstream_seq)
 
     RefSeqGene = entrez_record.id
+
+    filename = refSeqPath + RefSeqGene + '.gb'
+    h_gb = open(filename, "w")
+    SeqIO.write(entrez_record, h_gb, "gb")
+    h_gb.close()
+    return entrez_record
+
+
+# ------------------------------------------------
+def process(db_entry):
+    gene_name = db_entry['gene']
+    mutation = db_entry['mutation']
+    if mutation.find('>') != -1:
+        mut_type = 'snp'
+    elif mutation.find('ins')  != -1:
+        mut_type = 'ins'
+    elif mutation.find('del')  != -1:
+        mut_type = 'del'
+    elif mutation.find('dup')  != -1:
+        mut_type = 'dup'
+    else:
+        mut_type = 'unknown'
+
+    print('processing: gene ' + gene_name + ' in record ' + db_entry['var_id'])
+
+    seq = db_entry['seq'].replace('()','')
+    seq = seq.replace('/', '')
+
+    # TODO del, ins, dup do not follow VCFv4.2 specs
+    if mut_type == 'snp':
+        seq = re.split('\(|>|\)', seq)
+        upstream_seq, ref, alt, downstream_seq = seq
+    elif mut_type == 'del':
+        seq = re.split('\(|\)', seq)
+        upstream_seq, deletion, downstream_seq = seq
+        ref = deletion
+        alt = ''
+    elif mut_type == 'ins':
+        seq = re.split('\[|\]', seq)
+        upstream_seq, insertion, downstream_seq = seq
+        ref = ''
+        alt = insertion
+    elif mut_type == 'dup':
+        seq = re.split('\[|\]', seq)
+        upstream_seq, duplication, downstream_seq = seq
+        ref = ''
+        alt = duplication
+    else:
+        print('WARNING! Unknown mutation %s' % mutation)
+        return db_entry
+
+    if 'RefSeqGene' not in db_entry:
+        # get gene fasta from entrez
+        # count
+        entrez_record = fetch_RefSeqGene(gene_name)
+        if entrez_record == False:
+            return db_entry
+        RefSeqGene = entrez_record.id
+        db_entry[u'RefSeqGene'] = RefSeqGene
+    else:
+        RefSeqGene = db_entry[u'RefSeqGene']
+        entrez_record = fetch_RefSeqGene(gene_name, RefSeqGene=RefSeqGene)
+
+    entrez_seq = entrez_record.seq
+    downstream_seq = Seq(downstream_seq.upper())
+    upstream_seq = Seq(upstream_seq.upper())
+    #pos_up = entrez_seq.find(upstream_seq)
+    pos_down = entrez_seq.find(downstream_seq)
     #var_c = RefSeqGene + ':c.' + str(pos_down) + ref.upper() + '>' + alt.upper()
-    alt_ac, chrom, start_ref, end_ref = refseqgene_to_genomic(RefSeqGene)
     #var_g = alt_ac + ':g.' + str(int(start_ref) + pos_down) + ref.upper() + '>' + alt.upper()
-    var_c = {'RefSeqGene':RefSeqGene,
-             'pos':pos_down,
-             'ref':ref.upper(),
-             'alt':alt.upper()}
-    var_g = {'chrom': chrom,
-             'pos': int(start_ref) + pos_down,
-             'ref':ref.upper(),
-             'alt':alt.upper(),
-             'mut_type':mut_type}
-    db_entry[u'var_g'] = var_g
-    db_entry[u'var_c'] = var_c
+
+    try:
+        alt_ac, chrom, start_ref, end_ref = refseqgene_to_genomic(RefSeqGene)
+        db_entry[u'var_c'] = {'chrom': chrom, 'pos':pos_down,
+                              'ref':ref.upper(), 'alt':alt.upper(),
+                              'mut_type':mut_type}
+        db_entry[u'var_g'] = {'chrom': chrom, 'pos': int(start_ref) + pos_down,
+                              'ref':ref.upper(), 'alt':alt.upper(),
+                              'mut_type':mut_type}
+    except:
+        print('WARNING! RefSeqGene %s not found in reference genome' % RefSeqGene)
 
     return db_entry
 
 # ============================================================
+# TODO store genes in file not always querry!!!!
 if __name__ == "__main__":
     with open('dbass5_all.json','r') as f:
         db = json.loads(f.read())
-        for db_entry in db:
-            db_entry = process(db_entry)
+        for counter in range(0, len(db)): # counter to be able to restart at a later point
+            db_entry = db[counter]
+            db[counter] = process(db_entry)
 
     with open('dbass5_all_annotated.json', 'w') as f:
         data = json.dumps(db, sort_keys=True, indent=4,
