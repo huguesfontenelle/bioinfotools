@@ -13,8 +13,8 @@ from Bio import Entrez
 from Bio import SeqIO
 from Bio.Seq import Seq
 
-
 refSeqPath = '/Users/huguesfo/Documents/DATA/RefSeqGene/'
+
 
 # Human Genome Assembly Data
 # http://www.ncbi.nlm.nih.gov/projects/genome/assembly/grc/human/data/
@@ -35,21 +35,29 @@ def refseqgene_to_genomic(RefSeqGene):
     '''
     Maps a RefSeqGene to GRCh37.p13 genomic reference
     eg: refseqgene_to_genomic('NG_007954.1')
-    returns: NC_000008.10, 143951773, 143966236
+    returns: NC_000008.10, 143951773, 143966236, '+'
     '''
     cmd = ['cat', refseqgene_aln, '|', 'grep', RefSeqGene,
-           '|', 'cut -f1 -f4 -f5']
+           '|', 'cut -f1 -f4 -f5 -f9']
     p = subprocess.Popen(' '.join(cmd), stdout=subprocess.PIPE, shell=True)
     out, err = p.communicate()
     if out == '':
         return False
     records = out.rstrip().split('\n')
-    alt_ac, start_ref, end_ref  = records[0].split('\t')
+    alt_ac, start_ref, end_ref, info  = records[0].split('\t')
+    try:
+        info = {a[0]:a[1] for a in [i.split('=') for i in info.strip().split(';')]}
+        strand = info['Target'].split(' ')[3]
+    except:
+        print('ERROR! Strand info not found for %s.' % RefSeqGene)
+        strand = '+'
+        
+            
     # should get the NC instead of just the first one
     chrom = (key for key,value in chr_to_refseq_dict.items()
         if value==alt_ac).next()
 
-    return alt_ac, chrom, start_ref, end_ref
+    return alt_ac, chrom, start_ref, end_ref, strand
 
 # ------------------------------------------------
 def fetch_RefSeqGene(gene_name, RefSeqGene=None):
@@ -115,30 +123,49 @@ def process(db_entry):
 
     print('processing: gene ' + gene_name + ' in record ' + db_entry['var_id'])
 
-    seq = db_entry['seq'].replace('()','')
-    seq = seq.replace('/', '')
+    seq = db_entry['seq'].replace('()','').replace('/', '')
 
     # TODO del, ins, dup do not follow VCFv4.2 specs
     if mut_type == 'snp':
-        seq = re.split('\(|>|\)', seq)
-        upstream_seq, ref, alt, downstream_seq = seq
+        try:
+            seq1 = re.split('\(|>|\)', seq)
+            upstream_seq, ref, alt, downstream_seq = seq1[0:4]
+        except ValueError:
+            print('ERROR! SNP not found.')
+            return db_entry
     elif mut_type == 'del':
-        seq = re.split('\(|\)', seq)
-        upstream_seq, deletion, downstream_seq = seq
-        ref = deletion
-        alt = ''
+        try:
+            seq1 = re.split('\(|\)', seq)
+            upstream_seq, deletion, downstream_seq = seq1[0:3]
+            ref = deletion
+            alt = ''
+        except ValueError:
+            print('ERROR! Deletion not found.')
+            return db_entry
     elif mut_type == 'ins':
-        seq = re.split('\[|\]', seq)
-        upstream_seq, insertion, downstream_seq = seq
+        seq1 = re.split('\[|\]', seq)
+        upstream_seq, insertion, downstream_seq = seq1[0:3]
         ref = ''
         alt = insertion
     elif mut_type == 'dup':
-        seq = re.split('\[|\]', seq)
-        upstream_seq, duplication, downstream_seq = seq
+        try:
+            seq1 = re.split('\(|\)', seq)
+            upstream_seq, duplication, downstream_seq = seq1[0:3]
+        except ValueError:
+            print('WARNING! Duplication is not encoded with (); trying []')
+            try:
+                seq1 = re.split('\[|\]', seq)
+                upstream_seq = seq1[0]
+                duplication = seq1[1]
+                downstream_seq = seq1[4]
+            except ValueError:
+                print('ERROR! Duplication is not [] either. Giving up')
+                return db_entry
+            
         ref = ''
         alt = duplication
     else:
-        print('WARNING! Unknown mutation %s' % mutation)
+        print('ERROR! Unknown mutation %s' % mutation)
         return db_entry
 
     if 'RefSeqGene' not in db_entry:
@@ -162,15 +189,19 @@ def process(db_entry):
     #var_g = alt_ac + ':g.' + str(int(start_ref) + pos_down) + ref.upper() + '>' + alt.upper()
 
     try:
-        alt_ac, chrom, start_ref, end_ref = refseqgene_to_genomic(RefSeqGene)
+        alt_ac, chrom, start_ref, end_ref, strand = refseqgene_to_genomic(RefSeqGene)
         db_entry[u'var_c'] = {'chrom': chrom, 'pos':pos_down,
                               'ref':ref.upper(), 'alt':alt.upper(),
-                              'mut_type':mut_type}
-        db_entry[u'var_g'] = {'chrom': chrom, 'pos': int(start_ref) + pos_down,
+                              'mut_type':mut_type, 'strand':strand}         
+        if strand == '+':
+            pos = int(start_ref) + pos_down -1
+        else:
+            pos = int(end_ref) - pos_down +1
+        db_entry[u'var_g'] = {'chrom': chrom, 'pos': pos,
                               'ref':ref.upper(), 'alt':alt.upper(),
-                              'mut_type':mut_type}
+                              'mut_type':mut_type, 'strand':strand}
     except:
-        print('WARNING! RefSeqGene %s not found in reference genome' % RefSeqGene)
+        print('ERROR! RefSeqGene %s not found in reference genome' % RefSeqGene)
 
     return db_entry
 
@@ -179,14 +210,17 @@ def process(db_entry):
 if __name__ == "__main__":
     with open('dbass5_all.json','r') as f:
         db = json.loads(f.read())
-        for counter in range(0, len(db)): # counter to be able to restart at a later point
+        for counter in range(0, 20): # '''len(db)''' counter to be able to restart at a later point
             db_entry = db[counter]
-            db[counter] = process(db_entry)
-
-    with open('dbass5_all_annotated.json', 'w') as f:
+            if 'var_g' not in db_entry: # skip the ones that went well
+                db[counter] = process(db_entry)
+'''
+    with open('dbass5_all_annotated.json', 'wU') as f:
         data = json.dumps(db, sort_keys=True, indent=4,
                           separators=(',', ': '), ensure_ascii=False)
         f.write(unicode(data))
+'''
 
 
-
+    
+    
