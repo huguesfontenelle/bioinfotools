@@ -12,7 +12,8 @@ import subprocess, sys, os.path
 from Bio import Entrez
 from Bio import SeqIO
 from Bio.Seq import Seq
-
+import codecs
+    
 refSeqPath = '/Users/huguesfo/Documents/DATA/RefSeqGene/'
 
 
@@ -210,17 +211,16 @@ def process(db_entry):
 if __name__ == "__main__":
     with open('dbass5_all.json','r') as f:
         db = json.loads(f.read())
-        for counter in range(0, 20): # '''len(db)''' counter to be able to restart at a later point
+        for counter in range(0, len(db)): # '''len(db)''' counter to be able to restart at a later point
             db_entry = db[counter]
             if 'var_g' not in db_entry: # skip the ones that went well
                 db[counter] = process(db_entry)
-'''
-    with open('dbass5_all_annotated.json', 'wU') as f:
+
+
+    with open('dbass5_all_annotated.json', 'w') as f:
         data = json.dumps(db, sort_keys=True, indent=4,
-                          separators=(',', ': '), ensure_ascii=False)
-        f.write(unicode(data))
-'''
-
-
-    
+                          separators=(',', ': '), ensure_ascii=True)
+        data = unicode(data.strip(codecs.BOM_UTF8), 'utf-8')
+        f.write(data)
+   
     
