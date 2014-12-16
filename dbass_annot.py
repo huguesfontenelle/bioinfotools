@@ -5,7 +5,7 @@ Created on Tue Dec  2 13:54:06 2014
 @author: huguesfo
 """
 
-import json
+import json, codecs
 from annotation.splice.splice_annotate import SpliceAnnotate
 
 # ============================================================
@@ -21,12 +21,15 @@ if __name__ == "__main__":
 
     with open('dbass5_all_annotated_snp.json', 'w') as f:
         data = json.dumps(db1, sort_keys=True, indent=4,
-                          separators=(',', ': '), ensure_ascii=False)
-        f.write(unicode(data))
-        
+                          separators=(',', ': '), ensure_ascii=True)
+        data = unicode(data.strip(codecs.BOM_UTF8), 'utf-8')
+        f.write(data)
+
+# ============================================================
+# annotate        
 json_handle = open('dbass5_all_annotated_snp_scored.json', 'w')
 json_handle.write('[\n')
-for counter in range(0, 10): # counter to be able to restart at a later point
+for counter in range(0, len(db1)): # counter to be able to restart at a later point
     db_entry = db1[counter]
     var = db_entry['var_g']
     chrom = var['chrom']

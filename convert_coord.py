@@ -13,7 +13,7 @@ from Bio import Entrez
 from Bio import SeqIO
 from Bio.Seq import Seq
 import codecs
-    
+
 refSeqPath = '/Users/huguesfo/Documents/DATA/RefSeqGene/'
 
 
@@ -52,8 +52,8 @@ def refseqgene_to_genomic(RefSeqGene):
     except:
         print('ERROR! Strand info not found for %s.' % RefSeqGene)
         strand = '+'
-        
-            
+
+
     # should get the NC instead of just the first one
     chrom = (key for key,value in chr_to_refseq_dict.items()
         if value==alt_ac).next()
@@ -162,7 +162,7 @@ def process(db_entry):
             except ValueError:
                 print('ERROR! Duplication is not [] either. Giving up')
                 return db_entry
-            
+
         ref = ''
         alt = duplication
     else:
@@ -193,7 +193,7 @@ def process(db_entry):
         alt_ac, chrom, start_ref, end_ref, strand = refseqgene_to_genomic(RefSeqGene)
         db_entry[u'var_c'] = {'chrom': chrom, 'pos':pos_down,
                               'ref':ref.upper(), 'alt':alt.upper(),
-                              'mut_type':mut_type, 'strand':strand}         
+                              'mut_type':mut_type, 'strand':strand}
         if strand == '+':
             pos = int(start_ref) + pos_down -1
         else:
@@ -222,5 +222,4 @@ if __name__ == "__main__":
                           separators=(',', ': '), ensure_ascii=True)
         data = unicode(data.strip(codecs.BOM_UTF8), 'utf-8')
         f.write(data)
-   
-    
+
