@@ -27,7 +27,8 @@ if __name__ == "__main__":
         f.write(data)
 
 # ============================================================
-# annotate        
+# annotate: score the JSON with SSFL and MaxEntScan 
+db1 =  json.loads(open('dbass5_all_annotated_snp.json', 'r').read())      
 json_handle = open('dbass5_all_annotated_snp_scored.json', 'w')
 json_handle.write('[\n')
 for counter in range(0, len(db1)): # counter to be able to restart at a later point
@@ -40,7 +41,7 @@ for counter in range(0, len(db1)): # counter to be able to restart at a later po
     print "%s %s:%d%s>%s" % (db_entry['gene'],chrom, pos, ref, alt)
     splice = SpliceAnnotate(chrom, pos, ref, alt)
     splice.ID = db_entry['var_id']
-    splice.use_algo(use_SSFL=True, use_MaxEntScan=True, use_GeneSplicer=True, use_NNSplice=True, use_HSF=True)
+    splice.use_algo(use_SSFL=True, use_MaxEntScan=True) # use_GeneSplicer=True, use_NNSplice=True, use_HSF=True
     splice.score_splice_sites()
     splice.get_closest_authentic()
     splice.append_to_json(json_handle)
@@ -51,10 +52,10 @@ json_handle.close()
 
 
 # ============================================================
-# predict
+# predict the splicing effect with Houdayer method
 json_splice = JsonSplice('dbass5_all_annotated_snp_scored.json') 
 results = {}
-for counter in range(0, 300):
+for counter in range(0, len(json_splice.json_dict)):
     db_entry = json_splice.json_dict[counter]
     chrom = db_entry['chrom'] 
     pos = db_entry['pos']
@@ -69,6 +70,12 @@ for counter in range(0, 300):
     effect, comments = predict.predict()
     print "[%s] chr%s:%d%s>%s : %s (%s)" % (ID ,chrom, pos, ref, alt, effect, ', '.join(comments))
     results[ID] = effect
+    
+with open('dbass5_results.json', 'w') as f:
+        data = json.dumps(results, sort_keys=True, indent=4,
+                          separators=(',', ': '), ensure_ascii=True)
+        data = unicode(data.strip(codecs.BOM_UTF8), 'utf-8')
+        f.write(data)
 
 from collections import Counter
 Counter(results.values())
