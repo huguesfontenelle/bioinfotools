@@ -108,7 +108,7 @@ def parse_site():
 # ============================================================
 if __name__ == "__main__":
     db = parse_site()
-    with open('dbass5_all.json', 'w') as f:
+    with open('dbass5.json', 'w') as f:
         data = json.dumps(db, sort_keys=True, indent=4, separators=(',', ': '), ensure_ascii=False)
         f.write(unicode(data))
     

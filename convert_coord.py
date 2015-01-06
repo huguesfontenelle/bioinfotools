@@ -61,7 +61,7 @@ def refseqgene_to_genomic(RefSeqGene):
     return alt_ac, chrom, start_ref, end_ref, strand
 
 # ------------------------------------------------
-def fetch_RefSeqGene(gene_name, RefSeqGene=None):
+def fetch_RefSeqGene(gene_name, RefSeqGene=None, entry=0):
     Entrez.email = "hugues.fontenelle@medisin.uio.no"
     if RefSeqGene:
         search_term = RefSeqGene
@@ -84,17 +84,17 @@ def fetch_RefSeqGene(gene_name, RefSeqGene=None):
     # check if we do find the gene
     if count < 1:
         print('WARNING! Gene ' + gene_name + ' not found in record ' + db_entry['var_id'])
-        return False
+        return False, 0
     # warn for several finds
     if count > 1:
-        print('WARNING! Gene %s found %i times in record %s. Processing entry #1.'
-            % (gene_name, count, db_entry['var_id']))
+        print('WARNING! Gene %s found %i times in record %s. Processing entry #%d.' \
+            % (gene_name, count, db_entry['var_id'], entry))
 
     handle = Entrez.esearch(db="nuccore", term=search_term)
     record = Entrez.read(handle)
     idlist = record['IdList']
 
-    handle = Entrez.efetch(db="nucleotide", id=idlist[0],
+    handle = Entrez.efetch(db="nucleotide", id=idlist[entry],
                            rettype="gb", retmode="txt")
     entrez_record = SeqIO.read(handle, "gb")
 
@@ -104,7 +104,7 @@ def fetch_RefSeqGene(gene_name, RefSeqGene=None):
     h_gb = open(filename, "w")
     SeqIO.write(entrez_record, h_gb, "gb")
     h_gb.close()
-    return entrez_record
+    return entrez_record, len(idlist)
 
 
 # ------------------------------------------------
@@ -172,14 +172,14 @@ def process(db_entry):
     if 'RefSeqGene' not in db_entry:
         # get gene fasta from entrez
         # count
-        entrez_record = fetch_RefSeqGene(gene_name)
+        entrez_record, no_hits = fetch_RefSeqGene(gene_name)
         if entrez_record == False:
             return db_entry
         RefSeqGene = entrez_record.id
         db_entry[u'RefSeqGene'] = RefSeqGene
     else:
         RefSeqGene = db_entry[u'RefSeqGene']
-        entrez_record = fetch_RefSeqGene(gene_name, RefSeqGene=RefSeqGene)
+        entrez_record, no_hits = fetch_RefSeqGene(gene_name, RefSeqGene=RefSeqGene)
 
     entrez_seq = entrez_record.seq
     downstream_seq = Seq(downstream_seq.upper())
@@ -188,28 +188,50 @@ def process(db_entry):
     pos_down = entrez_seq.find(downstream_seq)
     #var_c = RefSeqGene + ':c.' + str(pos_down) + ref.upper() + '>' + alt.upper()
     #var_g = alt_ac + ':g.' + str(int(start_ref) + pos_down) + ref.upper() + '>' + alt.upper()
+    
+    if pos_down == -1:
+        print('ERROR! Sequence not found for Gene %s' % gene_name)
+        if no_hits>1:
+            entrez_record, no_hits = fetch_RefSeqGene(gene_name, entry=1)
+            RefSeqGene = entrez_record.id
+            db_entry[u'RefSeqGene'] = RefSeqGene
+            entrez_seq = entrez_record.seq
+            pos_down = entrez_seq.find(downstream_seq)
+            if pos_down == -1:
+                print('ERROR! Sequence not found for Gene %s' % gene_name)
+                db_entry.pop(u'RefSeqGene',None)
+                return db_entry                
+        else:
+             print('ERROR! Sequence not found for Gene %s' % gene_name)
+             db_entry.pop(u'RefSeqGene',None)
+             return db_entry       
+        
 
     try:
         alt_ac, chrom, start_ref, end_ref, strand = refseqgene_to_genomic(RefSeqGene)
-        db_entry[u'var_c'] = {'chrom': chrom, 'pos':pos_down,
-                              'ref':ref.upper(), 'alt':alt.upper(),
-                              'mut_type':mut_type, 'strand':strand}
-        if strand == '+':
-            pos = int(start_ref) + pos_down -1
-        else:
-            pos = int(end_ref) - pos_down +1
-        db_entry[u'var_g'] = {'chrom': chrom, 'pos': pos,
-                              'ref':ref.upper(), 'alt':alt.upper(),
-                              'mut_type':mut_type, 'strand':strand}
     except:
         print('ERROR! RefSeqGene %s not found in reference genome' % RefSeqGene)
+        return db_entry
+        
+    if strand == '+':
+        pos = int(start_ref) + pos_down -1
+        ref_g = ref.upper()
+        alt_g = alt.upper()
+    else: # strand == '-'
+        pos = int(end_ref) - pos_down +1
+        ref_g = '%s' % Seq(ref.upper()).reverse_complement()
+        alt_g = '%s' % Seq(alt.upper()).reverse_complement()
+        
+    db_entry[u'var_g'] = {'chrom': chrom, 'pos': pos,
+                          'ref': ref_g, 'alt':alt_g,
+                          'mut_type':mut_type, 'strand':strand}
 
     return db_entry
 
 # ============================================================
-# TODO store genes in file not always querry!!!!
+# Find and add genomic coordinates for each variant
 if __name__ == "__main__":
-    with open('dbass5_all.json','r') as f:
+    with open('dbass5.json','r') as f:
         db = json.loads(f.read())
         for counter in range(0, len(db)): # '''len(db)''' counter to be able to restart at a later point
             db_entry = db[counter]
@@ -217,7 +239,7 @@ if __name__ == "__main__":
                 db[counter] = process(db_entry)
 
 
-    with open('dbass5_all_annotated.json', 'w') as f:
+    with open('dbass5_g.json', 'w') as f:
         data = json.dumps(db, sort_keys=True, indent=4,
                           separators=(',', ': '), ensure_ascii=True)
         data = unicode(data.strip(codecs.BOM_UTF8), 'utf-8')
