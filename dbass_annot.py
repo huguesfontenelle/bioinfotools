@@ -11,26 +11,43 @@ from annotation.splice.splice_annotate import SpliceAnnotate
 from annotation.splice.splice_predict import SplicePredict, JsonSplice
 
 # ============================================================
-# filter the 577 entries to SNP only (505 remaining)
+# filter the 577 entries to SNP only (473 remaining)
 db1 = []
-if __name__ == "__main__":
-    with open('dbass5_all_annotated.json','r') as f:
-        db = json.loads(f.read())
-        for db_entry in db:
-            if 'var_g' in db_entry: # process the ones that went well
-                if db_entry['var_g']['mut_type'] == 'snp':
-                    db1.append(db_entry)
+with open('dbass5_g.json','r') as f:
+    db = json.loads(f.read())
+    for db_entry in db:
+        if 'var_g' in db_entry: # process the ones that went well
+            if db_entry['var_g']['mut_type'] == 'snp':
+                db1.append(db_entry)
 
-    with open('dbass5_all_annotated_snp.json', 'w') as f:
-        data = json.dumps(db1, sort_keys=True, indent=4,
-                          separators=(',', ': '), ensure_ascii=True)
-        data = unicode(data.strip(codecs.BOM_UTF8), 'utf-8')
-        f.write(data)
+with open('dbass5_g_snp.json', 'w') as f:
+    data = json.dumps(db1, sort_keys=True, indent=4,
+                      separators=(',', ': '), ensure_ascii=True)
+    data = unicode(data.strip(codecs.BOM_UTF8), 'utf-8')
+    f.write(data)
+
+# ============================================================
+# export as VCF
+header = '##fileformat=VCFv4.2\n'
+header += '##INFO=<ID=dbass5,Number=1,Type=String,Description="dbass5 SNP">\n'
+header += '#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n'
+vcf = open('dbass5_snp.vcf', 'w')
+vcf.write(header)
+with open('dbass5_g_snp.json', 'r') as f:
+    db = json.loads(f.read())
+    for db_entry in db:
+        var = db_entry['var_g']
+        record = '%s\t%s\t%s\t%s\t%s\t.\t.\t.\n' % (
+            var['chrom'], var['pos'],
+            'dbass5_' + db_entry['var_id'],
+            var['ref'], var['alt'])
+        vcf.write(record)
+vcf.close()
 
 # ============================================================
 # annotate: score the JSON with SSFL and MaxEntScan
-db1 =  json.loads(open('dbass5_all_annotated_snp.json', 'r').read())
-json_handle = open('dbass5_all_annotated_snp_scored.json', 'w')
+db1 =  json.loads(open('dbass5_g_snp.json', 'r').read())
+json_handle = open('dbass5_g_snp_scored.json', 'w')
 json_handle.write('[\n')
 for counter in range(0, len(db1)): # counter to be able to restart at a later point
     db_entry = db1[counter]
@@ -54,9 +71,9 @@ json_handle.close()
 
 # ============================================================
 # predict the splicing effect with Houdayer method
-json_splice = JsonSplice('dbass5_all_annotated_snp_scored.json')
+json_splice = JsonSplice('dbass5_g_snp_scored.json')
 results = {}
-for counter in range(0, len(json_splice.json_dict)):
+for counter in range(0, len(json_splice.json_dict)): #len(json_splice.json_dict)
     db_entry = json_splice.json_dict[counter]
     chrom = db_entry['chrom']
     pos = db_entry['pos']
@@ -69,25 +86,23 @@ for counter in range(0, len(json_splice.json_dict)):
     #predict.load_json(json_splice)
     predict.score_annotate()
     effect, comments = predict.predict()
-    print "[%s] chr%s:%d%s>%s : %s (%s)" % (ID ,chrom, pos, ref, alt, effect, ', '.join(comments))
-    results[ID] = effect
+    print "[%s] chr%s:%d%s>%s : %s (%s)" % (ID ,chrom, pos, ref, alt, ', '.join(effect), ', '.join(comments))
+    results[ID] = {'effect':effect, 'comments':comments}
 
-with open('dbass5_results.json', 'w') as f:
+with open('dbass5_g_snp_scored_predicted.json', 'w') as f:
         data = json.dumps(results, sort_keys=True, indent=4,
                           separators=(',', ': '), ensure_ascii=True)
         data = unicode(data.strip(codecs.BOM_UTF8), 'utf-8')
         f.write(data)
 
 
-Counter(results.values())
-
 # ============================================================
 # analysis
-db=json.loads(open('dbass5_all_annotated_snp_scored.json','r').read())
-results=json.loads(open('dbass5_results.json','r').read())
+db_scored=json.loads(open('dbass5_g_snp_scored.json','r').read())
+db_predicted=json.loads(open('dbass5_g_snp_scored_predicted.json','r').read())
 
 analysis = {}
-for db_entry in db:
+for db_entry in db_scored:
     ID = db_entry['ID']
     auth_pos, splice_type, strand = db_entry['authentic']['pos'], \
         db_entry['authentic']['splice_type'], \
@@ -101,20 +116,30 @@ for db_entry in db:
         is_in_consensus = -2 <= dist <= 6
     else:
         is_in_consensus = -5 <= dist <= 3
-    if ID in results:
-        effect = results[ID]
-        analysis[ID] = [effect, is_in_consensus, dist]
+    if ID in db_predicted:
+        result = db_predicted[ID]
+        result.update({'is_in_consensus':is_in_consensus, 'dist':dist})
+        analysis[ID] = result
 
-in_consensus = {k: v[0] for k, v in analysis.iteritems() if v[1]==True}
-far_away = {k: v[0]  for k, v in  analysis.iteritems() if v[1]==False}
+in_consensus = {k: v for k, v in analysis.iteritems() if v['is_in_consensus']==True}
+far_away = {k: v for k, v in analysis.iteritems() if v['is_in_consensus']==False}
 
-Counter(in_consensus.values())
-# Counter({u'Lost splice site': 218, u'No effect': 57, u'New cryptic splice site': 15})
-PPV = (218+15) / float(218+57+15) #80% on 290 snp
+# ============================================================
 
-Counter(far_away.values())
-# Counter({u'No effect': 170, u'New cryptic splice site': 45})
-PPV = 45 / float(170+45) # 21% on 215 snp
+len(in_consensus) #319
+lost = {k: v for k, v in in_consensus.iteritems() if 'Lost splice site' in v['effect']} #277
+new_ss = {k: v for k, v in in_consensus.iteritems() if 'New cryptic splice site' in v['effect']} #13
+lost_and_new = {k: v for k, v in in_consensus.iteritems() if 'New cryptic splice site' in v['effect'] and 'Lost splice site' in v['effect']} #9
+# PPV = (lost + new - lost_and_new ) / total = 88%
+PPV = (len(lost) + len(new_ss) - len(lost_and_new)) / float(len(in_consensus))
+
+len(far_away) #154
+lost = {k: v for k, v in far_away.iteritems() if 'Lost splice site' in v['effect']} #0
+new_ss = {k: v for k, v in far_away.iteritems() if 'New cryptic splice site' in v['effect']} #64
+lost_and_new = {k: v for k, v in far_away.iteritems() if 'New cryptic splice site' in v['effect'] and 'Lost splice site' in v['effect']} #0
+# PPV = (lost + new - lost_and_new ) / total = 20%
+PPV = (len(lost) + len(new_ss) - len(lost_and_new)) / float(len(in_consensus))
+
 
 
 
