@@ -29,7 +29,7 @@ def filter_snp(json_in, json_out):
         f.write(data)
 
 # ============================================================
-def export_json_as_vcf(json_in, vcf_out):
+def export_json_as_vcf(json_in, vcf_out, prefix_id=''):
     '''
     export as VCF
     '''
@@ -44,7 +44,7 @@ def export_json_as_vcf(json_in, vcf_out):
             var = db_entry['var_g']
             record = '%s\t%s\t%s\t%s\t%s\t.\t.\t.\n' % (
                 var['chrom'], var['pos'],
-                'dbass5_' + db_entry['var_id'],
+                prefix_id + db_entry['var_id'],
                 var['ref'], var['alt'])
             vcf.write(record)
     vcf.close()
@@ -64,8 +64,11 @@ def score_json(json_in, json_out):
         pos = var['pos']
         ref = var['ref']
         alt = var['alt']
-        print "%s %s:%d%s>%s" % (db_entry['gene'],chrom, pos, ref, alt)
-        splice = SpliceAnnotate(chrom, pos, ref, alt)
+        if 'gene' in db_entry:
+            print "%s %s:%s%s>%s" % (db_entry['gene'], chrom, pos, ref, alt)
+        else:
+            print "%s:%s%s>%s" % (chrom, pos, ref, alt)
+        splice = SpliceAnnotate(chrom, int(pos), ref, alt)
         splice.ID = db_entry['var_id']
         splice.use_algo(use_SSFL=True, use_MaxEntScan=True) # use_GeneSplicer=True, use_NNSplice=True, use_HSF=True
         splice.score_splice_sites()
@@ -90,13 +93,13 @@ def predict_json(json_in, json_out):
         alt = db_entry['alt']
         ref = db_entry['ref']
         ID = db_entry['ID']
-        predict = SplicePredict(chrom, pos, ref, alt)
+        predict = SplicePredict(chrom, int(pos), ref, alt)
         predict.ID = ID
         predict.strategy = 'Houdayer'
         #predict.load_json(json_splice)
         predict.score_annotate()
         effect, comments = predict.predict()
-        print "[%s] chr%s:%d%s>%s : %s (%s)" % (ID ,chrom, pos, ref, alt, ', '.join(effect), ', '.join(comments))
+        print "[%s] chr%s:%s%s>%s : %s (%s)" % (ID ,chrom, pos, ref, alt, ', '.join(effect), ', '.join(comments))
         results[ID] = {'effect':effect, 'comments':comments}
     
     with open(json_out, 'w') as f:
@@ -108,7 +111,7 @@ def predict_json(json_in, json_out):
 # ============================================================
 if __name__ == "__main__":         
     filter_snp('dbass5_g.json', 'dbass5_g_snp.json')
-    export_json_as_vcf('dbass5_g_snp.json', 'dbass5_snp.vcf')
+    export_json_as_vcf('dbass5_g_snp.json', 'dbass5_snp.vcf', prefix_id='dbass5_')
     score_json('dbass5_g_snp.json', 'dbass5_g_snp_scored.json')
     predict_json('dbass5_g_snp_scored.json', 'dbass5_g_snp_scored_predicted.json')
 
