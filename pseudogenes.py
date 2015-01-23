@@ -1,114 +1,74 @@
 # -*- coding: utf-8 -*-
 """
-Created on Tue Nov 25 13:31:25 2014
+Reads a genepanel and prints out which transcript have a pseudogenes
 
-@author: huguesfo
+Example usage:
+$ python pseudogenes.py --csv ~/genevar/amg/clinicalGenePanels/Bindevev_OUS_medGen_v01_b37/Bindevev_OUS_medGen_v01_b37.transcripts.csv
+
+@author: Hugues Fontenelle
+@date: 2015
 """
-import os, path
-import csv
 
-pseudo_filename = '/Users/huguesfo/Documents/DATA/pseudogenes.tsv'
-genepanel_filename = '/Users/huguesfo/Devel/genevar/amg/clinicalGenePanels/Ciliopati_OUS_medGen_v02_b37/coverageRegions.bed'
-tabix = '/Users/huguesfo/Softwares/tabix-0.2.6/tabix'
+genepanel_filename = '/Users/huguesfo/Devel/genevar/amg/clinicalGenePanels/Bindevev_OUS_medGen_v01_b37/Bindevev_OUS_medGen_v01_b37.transcripts.csv'
+email = 'hugues.fontenelle@medisin.uio.no'
 
-cwd = os.getcwd()
-os.chdir(os.path.dirname(pseudo_filename))
+import csv, sys, argparse
+from Bio import Entrez, SeqIO 
 
+# ------------------------------------------------------------
+def get_transcripts(genepanel_filename):
+    transcripts = []
+    with open(genepanel_filename, 'r') as genepanel_file:
+        reader = csv.reader(genepanel_file, delimiter='\t')
+        next(reader)
+        for row in reader:
+            transcript = row[3]
+            gene_name = row[6]
+            transcripts.append([transcript, gene_name])
+    return transcripts
 
-fileName, fileExtension = os.path.splitext(pseudo_filename)
-pseudo_filename_sorted = fileName + '.sorted' + fileExtension
-pseudo_filename_compressed = fileName + '.sorted' + fileExtension + '.gz'
+# ------------------------------------------------------------
+def get_GeneID(transcript):
+    Entrez.email = email
+    handle = Entrez.efetch(db="nuccore", id=transcript, rettype="gb")
+    record = SeqIO.read(handle, 'gb')
+    handle.close()
+    GeneID = ''      
+    for feature in record.features:
+        if feature.type == 'gene':
+            break
+    for xref in feature.qualifiers.get('db_xref'):
+        if xref.startswith('GeneID:'):
+            GeneID = xref[7:]
+            break
+    return GeneID
 
-# sorting out
-cmd = ['(grep ^"Current Build"',  pseudo_filename, ';',
-       'grep -v ^"Current Build"',  pseudo_filename,
-       '| sort -k1,1 -k4,4n -k5,5n) >', pseudo_filename_sorted ]
-os.system(' '.join(cmd))
+# ------------------------------------------------------------    
+def get_pseudogenesID(GeneID): 
+    search_string = 'related_functional_gene_' + GeneID        
+    handle = Entrez.esearch(db="gene", term=search_string)
+    record = Entrez.read(handle)
+    handle.close() 
+    return record['IdList']
 
-# compressing
-cmd = ['bgzip -c', pseudo_filename_sorted, '>', pseudo_filename_compressed]
-os.system(' '.join(cmd))
-   
- # create index
-cmd = ['tabix -s 3 -b 4 -e 5 -S 1', pseudo_filename_compressed]
-os.system(' '.join(cmd))
- 
-pseudo_list = []
-#Loop over genepanel regions 
-with open(genepanel_filename, 'r') as genepanel_file:
-    reader = csv.reader(genepanel_file, delimiter='\t')
-    next(reader)
-    for row in reader:
-        #chrom = 'chr'+row[0]
-        chrom = row[0]
-        start = row[1]
-        end = row[2]
-        region = chrom +':' + start + '-' + end
-        #print region
-        cmd = ' '.join([tabix, '-s 3 -b 4 -e 5 -S 1', pseudo_filename_compressed, region])
-        cmd_out =  os.popen(cmd).read()
-        if not cmd_out == '':
-            print cmd_out
-            pseudo_region = cmd_out.split('\t')[3:5]
-            pseudo_list.append([chrom, start, end, pseudo_region[0], pseudo_region[1]])
+# ------------------------------------------------------------  
+def main():
+    parser = argparse.ArgumentParser(description='Find pseudogenes ID from genepanel CSV file.')
+    parser.add_argument('--csv', action='store', dest='genepanel_filename', required=True, help='input genepanel CSV filename')
+    args = parser.parse_args()
+    
+    print 'Transcript\tGene\tGeneID\tno_pseudo\tpseudoIDs'
+    transcripts = get_transcripts(args.genepanel_filename)
+    for transcript in transcripts:
+        GeneID = get_GeneID(transcript[0])
+        pseudogenesIDs = get_pseudogenesID(GeneID)
+        if len(pseudogenesIDs) > 0:
+            print '%s\t%s\t%s\t%d\t(%s)' % (transcript[0], transcript[1], GeneID, len(pseudogenesIDs), ', '.join(pseudogenesIDs))
+        else:
+            print '%s\t%s\t%s\t%d' % (transcript[0], transcript[1], GeneID, len(pseudogenesIDs))
 
-# write output
-header = ['chrom', 'gene_start', 'gene_end', 'pseudo_start', 'pseudo_end'] 
-csv_filename = genepanel_filename.split('/')[-2] + '.pseudogenes.csv'
-with open(csv_filename, 'w') as fp:
-    writer = csv.writer(fp, delimiter=',')
-    writer.writerow(header)
-    writer.writerows(pseudo_list)
-
-os.chdir(cwd)
-
-
-'''
-from Bio import Entrez, SeqIO
-
-refseq_id = 'NC_000015.9'
-startpos =                       60257141                
-        
-endpos =         60258283	
-
-#ENSG00000183586	ENST00000453847	1	152372053	152372245	1	HMGN3P1
-
-Entrez.email = 'hugues.fontenelle@gmail.com'
-handle = Entrez.efetch(db="nucleotide",
-                       id=refseq_id,
-                       rettype="fasta",
-                       strand=1,
-                       seq_start=startpos,
-                       seq_stop=endpos)
-entrez_record = SeqIO.read(handle, "fasta")
-handle.close()
-
-fasta = str(entrez_record.seq)
-
-'''
-from annotation.splice.refseq_utils import *
-fasta = get_fasta('10', 45566240, 45566657)
-
-
-import csv
-pseudo_filename = '/Users/huguesfo/Documents/DATA/pseudo.tsv'
-genepanel_filename = '/Users/huguesfo/Devel/genevar/amg/clinicalGenePanels/Ciliopati_OUS_medGen_v02_b37/coverageRegions.bed'
-gene_list = []
-with open(genepanel_filename, 'r') as genepanel_file:
-    reader = csv.reader(genepanel_file, delimiter='\t')
-    next(reader)
-    for row in reader:
-        gene_name = row[3].split('_')[0]
-        if gene_name not in gene_list:
-            gene_list.append(gene_name)
-            print gene_name
-
-affected_gene_list = []
-for gene_name in gene_list:
-    cmd = ' '.join(['grep', '$\'\t'+gene_name+'\'', pseudo_filename])
-    cmd_out =  os.popen(cmd).read()
-    if not cmd_out == '': 
-        affected_gene_list.append(gene_name)
-        print cmd_out
-        
-        
+# ============================================================  
+if __name__ == "__main__":
+    sys.exit(main())
+    
+    
