@@ -9,7 +9,8 @@ $ python pseudogenes.py --csv ~/genevar/amg/clinicalGenePanels/Bindevev_OUS_medG
 @date: 2015
 """
 
-genepanel_filename = '/Users/huguesfo/Devel/genevar/amg/clinicalGenePanels/Bindevev_OUS_medGen_v01_b37/Bindevev_OUS_medGen_v01_b37.transcripts.csv'
+#genepanel_filename = '/Users/huguesfo/Devel/genevar/amg/clinicalGenePanels/Bindevev_OUS_medGen_v01_b37/Bindevev_OUS_medGen_v01_b37.transcripts.csv'
+genepanel_filename = '/Users/huguesfo/Devel/genevar/amg/clinicalGenePanels/EEogPU_OUS_medGen_v01_b37/EEogPU_OUS_medGen_v01_b37.transcripts.csv'
 email = 'hugues.fontenelle@medisin.uio.no'
 
 import csv, sys, argparse
@@ -57,15 +58,20 @@ def main():
     parser.add_argument('--csv', action='store', dest='genepanel_filename', required=True, help='input genepanel CSV filename')
     args = parser.parse_args()
     
-    print 'Transcript\tGene\tGeneID\tno_pseudo\tpseudoIDs'
+    print 'Transcript\tGene\tGeneID\tpseudoIDs'
     transcripts = get_transcripts(args.genepanel_filename)
     for transcript in transcripts:
         GeneID = get_GeneID(transcript[0])
         pseudogenesIDs = get_pseudogenesID(GeneID)
         if len(pseudogenesIDs) > 0:
-            print '%s\t%s\t%s\t%d\t(%s)' % (transcript[0], transcript[1], GeneID, len(pseudogenesIDs), ', '.join(pseudogenesIDs))
+            print '%s\t%s\t%s\t%s' % (transcript[0], transcript[1], GeneID, ', '.join(pseudogenesIDs))
         else:
-            print '%s\t%s\t%s\t%d' % (transcript[0], transcript[1], GeneID, len(pseudogenesIDs))
+            print '%s\t%s\t%s\t%d' % (transcript[0], transcript[1], GeneID)
+
+# ------------------------------------------------------------    
+def get_pseudogene_cds(GeneID):
+    handle = Entrez.efetch(db="gene", id=str(GeneID), rettype='xml')
+    record=Entrez.read(handle)
 
 # ============================================================  
 if __name__ == "__main__":
