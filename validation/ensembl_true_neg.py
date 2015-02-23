@@ -9,9 +9,8 @@ import csv, json, codecs, os, sys
 from annotation.splice.splice_score import SpliceScore
 from annotation.splice.splice_predict import SplicePredict
 
-
-tsv_filename = '/Users/huguesfo/Documents/DATA/Splice/TN/splice_validated_cited_nonpathogenic.tsv'
-json_filename = 'splice_validated_cited_nonpathogenic.json'
+REFSEQGENE = "/Users/huguesfo/Documents/DATA/b37/refSeq/refGene_131119.tab" # RefSeqGene definitions
+REFSEQ = "/Users/huguesfo/Documents/DATA/b37/human_g1k_v37_decoy.fasta" # RefSeq FASTA sequences (hg19)
 
 chr_list = [str(x) for x in range(1,23)]; chr_list.extend(['X', 'Y'])
 
@@ -44,32 +43,23 @@ def biomart_tsv_to_json(tsv_filename, json_out):
             data = unicode(data.strip(codecs.BOM_UTF8), 'utf-8')
             f.write(data)
 
-# ------------------------------------------------
+## ------------------------------------------------
 def score_json(json_in, json_out):
     '''
     annotate: score the JSON with SSFL and MaxEntScan
     '''
     db1 =  json.loads(open(json_in, 'r').read())
-    json_handle = open(json_out, 'w')
-    json_handle.write('[\n')
-    for counter in range(0, len(db1)): # counter to be able to restart at a later point
-        record = db1[counter]
-        chrom = record['chrom']
-        pos = record['pos']
-        ref = record['ref']
-        alt = record['alt']
-        ID = record['ID']
-        print "Scoring [%s] chr%s:%s%s>%s" % (ID ,chrom, pos, ref, alt)
-        splice = SpliceScore(chrom, pos, ref, alt)
-        splice.ID = record['ID']
-        splice.use_algo(use_SSFL=True, use_MaxEntScan=True, \
+    records = list()    
+    for record in db1:
+        s = SpliceScore(record)
+        s.set_ref_seq_gene(REFSEQGENE)
+        s.set_ref_seq(REFSEQ)
+        s.use_algo(use_SSFL=True, use_MaxEntScan=True, \
                         use_GeneSplicer=True, use_NNSplice=True, use_HSF=True)
-        splice.score_splice_sites()
-        splice.append_to_json(json_handle)
-        json_handle.write(',\n')
-    json_handle.seek(-2, 2) # in order to remove the latest ",\n"
-    json_handle.write('\n]\n')
-    json_handle.close()
+        s.score_splice_sites()   
+        records.append(s)
+    with open(json_out, 'w') as f:
+        f.write(json.dumps(records, indent=4, ensure_ascii=False))    
 
 # ------------------------------------------------
 def predict_json(json_in, json_out, strategy = 'Houdayer'):
@@ -77,36 +67,21 @@ def predict_json(json_in, json_out, strategy = 'Houdayer'):
     predict the splicing effect
     '''
     db1 =  json.loads(open(json_in, 'r').read())
-    for counter in range(0, len(db1)): #len(json_splice.json_dict)
-        record = db1[counter]
-        chrom = record['chrom']
-        pos = record['pos']
-        alt = record['alt']
-        ref = record['ref']
-        ID = record['ID']
-        predict = SplicePredict(chrom, pos, ref, alt)
-        predict.ID = ID
-        predict.strategy = strategy
-        predict.load_scores(record)
-        splice_effect = predict.predict()
-        eff = '&'.join([h['Effect'] for h in splice_effect[strategy]])
-        print "Predicting [%s] chr%s:%s%s>%s : %s" % (ID ,chrom, pos, ref, alt, eff)
-    
-        if 'predict' in record:
-            record['predict'].update(splice_effect)
-        else:
-            record['predict'] = splice_effect
-    
+    records = list()
+    for record in db1:
+        p = SplicePredict(record)
+        p.set_ref_seq_gene(REFSEQGENE)
+        p.set_ref_seq(REFSEQ)
+        p.strategy = strategy
+        p.predict()   
+        records.append(p)
     with open(json_out, 'w') as f:
-        data = json.dumps(db1, sort_keys=True, indent=4,
-                          separators=(',', ': '), ensure_ascii=True)
-        data = unicode(data.strip(codecs.BOM_UTF8), 'utf-8')
-        f.write(data)
-
-
+        f.write(json.dumps(records, indent=4, ensure_ascii=False))
 
 # ============================================================
 def main():
+    tsv_filename = '/Users/huguesfo/Documents/DATA/Splice/TN/splice_validated_cited_nonpathogenic.tsv'
+    json_filename = 'splice_validated_cited_nonpathogenic.json'
     biomart_tsv_to_json(tsv_filename, json_filename)
     score_json(json_filename, os.path.splitext(json_filename)[0] + '_scored.json')
     predict_json(os.path.splitext(json_filename)[0] + '_scored.json', \
@@ -116,6 +91,6 @@ def main():
 
 # ============================================================
 if  __name__ == "__main__":
-    sys.exit(main())
+    main()
 
 
