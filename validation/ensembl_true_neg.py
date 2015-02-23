@@ -25,7 +25,7 @@ def biomart_tsv_to_json(tsv_filename, json_out):
             pos = row['Chromosome position start (bp)']
             alleles = row['Variant Alleles'].split('/')
             ref, alt = alleles[0:2]
-            if chrom in chr_list and len(ref) == len(alt) == 1:
+            if chrom in chr_list and ref in ['A', 'T', 'C', 'G'] and alt in ['A', 'T', 'C', 'G']:
                 true_neg.append({'ID':ID,
                                  'chrom':chrom,
                                  'pos':int(pos),
@@ -43,29 +43,34 @@ def biomart_tsv_to_json(tsv_filename, json_out):
             data = unicode(data.strip(codecs.BOM_UTF8), 'utf-8')
             f.write(data)
 
-## ------------------------------------------------
+# ------------------------------------------------
 def score_json(json_in, json_out):
     '''
-    annotate: score the JSON with SSFL and MaxEntScan
+    annotate: score the JSON with all algorithms
     '''
+    print '***** SCORING *****'
     db1 =  json.loads(open(json_in, 'r').read())
     records = list()    
-    for record in db1:
+    for idx in range(len(db1)):
+        record = db1[idx]
         s = SpliceScore(record)
         s.set_ref_seq_gene(REFSEQGENE)
         s.set_ref_seq(REFSEQ)
         s.use_algo(use_SSFL=True, use_MaxEntScan=True, \
                         use_GeneSplicer=True, use_NNSplice=True, use_HSF=True)
-        s.score_splice_sites()   
+        s.score_splice_sites()
+        print s
+        print '...%d/%d' % (idx+1, len(db1))
         records.append(s)
     with open(json_out, 'w') as f:
-        f.write(json.dumps(records, indent=4, ensure_ascii=False))    
+        f.write(json.dumps(records, indent=4, ensure_ascii=False))
 
 # ------------------------------------------------
 def predict_json(json_in, json_out, strategy = 'Houdayer'):
     '''
     predict the splicing effect
     '''
+    print '***** PREDICTING *****'
     db1 =  json.loads(open(json_in, 'r').read())
     records = list()
     for record in db1:
@@ -80,14 +85,17 @@ def predict_json(json_in, json_out, strategy = 'Houdayer'):
 
 # ============================================================
 def main():
-    tsv_filename = '/Users/huguesfo/Documents/DATA/Splice/TN/splice_validated_cited_nonpathogenic.tsv'
-    json_filename = 'splice_validated_cited_nonpathogenic.json'
-    biomart_tsv_to_json(tsv_filename, json_filename)
-    score_json(json_filename, os.path.splitext(json_filename)[0] + '_scored.json')
-    predict_json(os.path.splitext(json_filename)[0] + '_scored.json', \
-                 os.path.splitext(json_filename)[0] + '_predicted.json', strategy = 'Houdayer')
-    predict_json(os.path.splitext(json_filename)[0] + '_predicted.json', \
-                 os.path.splitext(json_filename)[0] + '_predicted.json', strategy = 'AMG-diag')
+    basenames = [# 'splice_validated_cited_nonpathogenic',
+                 # 'nonpathogenic_validated_cited',
+                 'splice_non_pathogenic',
+                 'splice_cited_MAF']
+    for basename in basenames:
+        tsv_filename = '/Users/huguesfo/Documents/DATA/Splice/TN/' + basename + '.tsv'
+        json_filename = basename + '.json'
+        biomart_tsv_to_json(tsv_filename, json_filename)
+        score_json(json_filename, basename + '_scored.json')
+        predict_json(basename + '_scored.json', basename + '_predicted.json', strategy = 'Houdayer')
+        predict_json(basename + '_predicted.json', basename + '_predicted.json', strategy = 'AMG-diag')
 
 # ============================================================
 if  __name__ == "__main__":
