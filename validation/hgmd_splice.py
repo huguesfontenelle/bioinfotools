@@ -8,10 +8,8 @@ Created on Tue Jan 20 13:18:03 2015
 
 import vcf, os
 
-hgmd_splice = '/Users/huguesfo/Documents/DATA/Splice/hgmd_splice.vcf'
-os.chdir('/Users/huguesfo/Devel/bioinfotools')
-
-
+hgmd_splice = '/Users/huguesfo/Documents/DATA/Splice/TP/hgmd_splice.vcf'
+#os.chdir('/Users/huguesfo/Devel/bioinfotools')
 
 # ============================================================
 def split_hgmd_splice():
@@ -20,7 +18,7 @@ def split_hgmd_splice():
     '''
     vcf_handle = open(hgmd_splice, 'r')
     vcf_reader = vcf.Reader(vcf_handle)
-    
+
     base, ext = os.path.splitext(hgmd_splice)
     batch = 0
     output_filename = base + '_%02d' % batch + ext
@@ -36,4 +34,6 @@ def split_hgmd_splice():
             vcf_writer = vcf.Writer(vcf_output, vcf_reader)
         vcf_writer.write_record(record)
         counter+=1
-        
+
+
+
