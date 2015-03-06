@@ -13,22 +13,28 @@ $ python pseudogenes.py --csv ~/genevar/amg/clinicalGenePanels/Bindevev_OUS_medG
 genepanel_filename = '/Users/huguesfo/Devel/genevar/amg/clinicalGenePanels/EEogPU_OUS_medGen_v01_b37/EEogPU_OUS_medGen_v01_b37.transcripts.csv'
 email = 'hugues.fontenelle@medisin.uio.no'
 
-import csv, sys, argparse
+import csv, sys, argparse, os
 from Bio import Entrez, SeqIO 
 from Bio.Blast import NCBIWWW
 
-# ------------------------------------------------------------
-def get_transcripts(genepanel_filename):
-    transcripts = []
-    with open(genepanel_filename, 'r') as genepanel_file:
-        reader = csv.reader(genepanel_file, delimiter='\t')
-        next(reader)
-        for row in reader:
-            transcript = row[3]
-            gene_name = row[6]
-            transcripts.append([transcript, gene_name])
-    return transcripts
 
+# ------------------------------------------------------------  
+def read_genepanel(genepanel_filename):
+    "Parses a genepanel CSV file into a dictionary"
+    fieldnames = ['chrom', 'start', 'end', 'transcript', 'no', 'strand', 'gene', 'ENSG', 'ENST', 'exon_start', 'exon_end']
+    genepanel=list()
+    with open(genepanel_filename, 'rb') as csvfile:
+        reader = csv.DictReader(csvfile, delimiter='\t', fieldnames=fieldnames)
+        for row in reader:
+            if row['start'] is None:
+                continue
+            row['start'] = int(row['start'])
+            row['end'] = int(row['end'])
+            row['exon_start'] = [int(pos) for pos in row['exon_start'].split(',')]
+            row['exon_end'] = [int(pos) for pos in row['exon_end'].split(',')]
+            genepanel.append(row)
+    return genepanel
+    
 # ------------------------------------------------------------
 def get_GeneID(transcript):
     Entrez.email = email
@@ -97,7 +103,7 @@ def run_blast(pseudo, filename="my_blast.xml"):
     save_file.close()
     result_handle.close()
     #TODO: rename file with pseudogene name
-     
+   
 # ------------------------------------------------------------  
 def interstect_blast_gene(GeneID, filename="my_blast.xml"):
     result_handle = open("my_blast.xml")  
@@ -110,27 +116,29 @@ def main():
     args = parser.parse_args()
     
     print 'Transcript\tGene\tGeneID\tpseudoIDs'
-    transcripts = get_transcripts(args.genepanel_filename)
-    for transcript in transcripts:
-        GeneID = get_GeneID(transcript[0])
+    genepanel = read_genepanel(args.genepanel_filename)
+    for gene in genepanel:
+        transcript = gene['transcript']
+        GeneID = get_GeneID(transcript)
         pseudogenesIDs = get_pseudogenesID(GeneID)
         if len(pseudogenesIDs) > 0:
-            print '%s\t%s\t%s\t%s' % (transcript[0], transcript[1], GeneID, ', '.join(pseudogenesIDs))
+            print '%s\t%s\t%s\t%s' % (transcript, gene['name'], GeneID, ', '.join(pseudogenesIDs))
         else:
-            print '%s\t%s\t%s\t%d' % (transcript[0], transcript[1], GeneID)
-            
+            print '%s\t%s\t%s\t%d' % (transcript, gene['name'], GeneID)
+
+           
 # ============================================================  
 '''if __name__ == "__main__":
     sys.exit(main())
 '''    
-
-transcripts = get_transcripts(genepanel_filename)
-transcript=transcripts[6] # ZEB2
-GeneID = get_GeneID(transcript[0])
+os.chdir('/Users/huguesfo/Devel/bioinfotools/pseudogenes')
+genepanel = read_genepanel(genepanel_filename)
+transcript = genepanel[6]['transcript'] # ZEB2
+GeneID = get_GeneID(transcript)
 pseudogenesIDs = get_pseudogenesID(GeneID)
 pseudo = get_pseudogene(pseudogenesIDs[0])
-run_blast(pseudo)
-interstect_blast_gene(GeneID)
+#run_blast(pseudo)
+#interstect_blast_gene(GeneID)
 
     
     
