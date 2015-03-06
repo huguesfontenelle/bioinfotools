@@ -16,7 +16,8 @@ email = 'hugues.fontenelle@medisin.uio.no'
 import csv, sys, argparse, os
 from Bio import Entrez, SeqIO 
 from Bio.Blast import NCBIWWW
-
+import xml.etree.ElementTree as ET
+import re
 
 # ------------------------------------------------------------  
 def read_genepanel(genepanel_filename):
@@ -105,9 +106,52 @@ def run_blast(pseudo, filename="my_blast.xml"):
     #TODO: rename file with pseudogene name
    
 # ------------------------------------------------------------  
-def interstect_blast_gene(GeneID, filename="my_blast.xml"):
-    result_handle = open("my_blast.xml")  
-    # do stuffs
+def interstect_blast_gene(gene, filename="my_blast.xml"):
+    "parse XML blast into dict"
+    tree = ET.parse('my_blast.xml')
+    root = tree.getroot()
+
+    hit_headers = ['Hit_accession', 'Hit_id', 'Hit_def', 'Hit_len']
+    hsp_headers_float = ['Hsp_bit-score',
+        'Hsp_evalue']
+    hsp_headers_int = ['Hsp_score',
+        'Hsp_query-from',
+        'Hsp_query-to',
+        'Hsp_hit-from',
+        'Hsp_hit-to',
+        'Hsp_query-frame',
+        'Hsp_hit-frame',
+        'Hsp_identity',
+        'Hsp_positive',
+        'Hsp_gaps',
+        'Hsp_align-len']
+    hsp_headers_string = ['Hsp_qseq',
+        'Hsp_hseq',
+        'Hsp_midline']
+    
+    blasts = list()
+    for hit in root.iter('Hit'):
+        hsps = hit.find('Hit_hsps')
+        for hsp in hsps.iter('Hsp'):
+            blast = dict()
+            for ele in hit_headers:
+                blast[ele] = hit.find(ele).text
+            for ele in hsp_headers_int:
+                blast[ele] = int(hsp.find(ele).text)
+            for ele in hsp_headers_float:
+                blast[ele] = float(hsp.find(ele).text)
+            for ele in hsp_headers_string:
+                blast[ele] = hsp.find(ele).text 
+            blast['chrom'] = re.findall(r"[\w]+", blast['Hit_def'])[3]
+            blasts.append(blast)
+    
+    '''
+    relevant in blast are: 'chrom', 'Hsp_hit-from' and 'Hsp_hit-to'
+    relevant in gene are: 'chrom', 'exon_start' and 'exon_end'
+    '''
+
+    
+    
     
 # ============================================================  
 def main():
@@ -138,7 +182,7 @@ GeneID = get_GeneID(transcript)
 pseudogenesIDs = get_pseudogenesID(GeneID)
 pseudo = get_pseudogene(pseudogenesIDs[0])
 #run_blast(pseudo)
-#interstect_blast_gene(GeneID)
+#interstect_blast_gene(genepanel[6])
 
     
     
