@@ -216,6 +216,27 @@ def run(genepanel):
         print '********************'
     return results
 
+# ------------------------------------------------------------
+def pretty_print(results):
+    ""
+    summary = dict()
+    for gene in results:
+        gene_name = gene['gene']['gene']
+        exon = gene['overlap']['exon']
+        chrom = gene['gene']['chrom']
+        start = gene['gene']['start']
+        end = gene['gene']['end']
+        if gene_name in summary:
+            summary[gene_name]['exons'].append(exon)
+            summary[gene_name]['exons'] = sorted(list(set(summary[gene_name]['exons'])))
+        else:
+            summary[gene_name] = {'chrom': chrom, 'start': start, 'end':end, 'exons': [exon]}    
+    
+    print "# chrom start end name exons"
+    for gene_name, gene in summary.iteritems():
+        print gene['chrom'], gene['start'], gene['end'], gene_name, gene['exons']
+
+    
 # ============================================================
 def main():
     parser = argparse.ArgumentParser(description='Find pseudogenes ID from genepanel CSV file.')
@@ -242,7 +263,7 @@ if __name__ == "__main__":
     with open('EEogPU_OUS_medGen_v01_b37.pseudo.json', 'w') as outfile:
          json.dump(results, outfile, sort_keys = True, indent = 4,
                    ensure_ascii=False)
-
+    pretty_print(results)
 
 
 
