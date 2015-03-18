@@ -69,17 +69,20 @@ for record in data:
     
 houdayer = [[v['variant'], v['predict']['Houdayer'][0]['Effect']] for v in data]
 amg_diag = [[v['variant'], v['predict']['AMG-diag'][0]['Effect']] for v in data]
+amg_kreft = [[v['variant'], v['predict']['AMG-kreftgenetikk'][0]['Effect']] for v in data]
 
 result_houdayer = {(a,b):v for (a,b),v in Counter(map(tuple,houdayer)).iteritems()}
 result_amg_diag = {(a,b):v for (a,b),v in Counter(map(tuple,amg_diag)).iteritems()}
-name_result = ['Houdayer', 'AMG-diag']
+result_amg_kreft = {(a,b):v for (a,b),v in Counter(map(tuple, amg_kreft)).iteritems()}
+
+name_result = ['Houdayer', 'AMG-diag', 'AMG-kreftgenetikk']
 
 loc = ['Donor_exonic', 'Donor_consensus', 'Donor_2bp', 'Donor_intronic', \
     'Acceptor_exonic', 'Acceptor_2bp', 'Acceptor_consensus', 'Acceptor_intronic', 'Intergenic']
 eff = ['no_effect', 'de_novo', 'lost_site']
 
 with open('h.csv', 'w') as f:
-    for idx, r in enumerate([result_houdayer, result_amg_diag]):
+    for idx, r in enumerate([result_houdayer, result_amg_diag, result_amg_kreft]):
         f.write(name_result[idx]+ '\t' + '\t'.join(loc) + '\n')
         for effi in eff:
             s = [effi]

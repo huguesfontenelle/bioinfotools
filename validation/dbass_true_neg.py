@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
 """
+Read a file from Ensembl Biomart, to JSON, to VCF
+
 Created on Wed Jan  7 14:18:34 2015
 
 @author: huguesfo
